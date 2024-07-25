@@ -1,0 +1,15 @@
+---
+ubuntu:
+  hosts:
+    main:
+      ansible_host: ny-worker-1.vintaratrading.com
+      ansible_user: root
+      ansible_port: 22
+      host_packages:
+        - clang
+        - cmake
+        - llvm
+        - libudev-dev
+        - make
+        - python3-venv
+        - zlib1g-dev

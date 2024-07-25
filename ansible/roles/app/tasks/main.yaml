@@ -1,0 +1,47 @@
+---
+- name: APP | Ensure `solana_exporter` is on target commit
+  ansible.builtin.git:
+    repo: "{{ solana_exporter_repo }}"
+    dest: /home/{{ansible_user}}/solana-exporter
+    clone: true
+    update: true
+    force: true
+  register: git_result
+  changed_when: "git_result.after|default('after') != git_result.before|default('before')"
+
+- name: APP | Build app binary
+  when: git_result.changed is true
+  command: chdir=/home/{{ansible_user}}/solana-exporter cargo build --release
+
+- name: APP | Copy `sol-exporter.service`
+  ansible.builtin.template:
+    src: sol-exporter.service.j2
+    dest: /etc/systemd/system/sol-exporter.service
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  register: service_file
+
+- name: APP | Reload systemd daemon
+  become: true
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: service_file.changed
+
+- name: APP | Copy `config.toml`
+  ansible.builtin.template:
+    src: config.toml.j2
+    dest:  ~/.solana-exporter/config.toml
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+
+- name: APP | Start systemd service
+  when: git_result.changed is true or service_file.changed is true
+  ansible.builtin.service:
+    name: sol-exporter
+    state: restarted
+    enabled: true
+  become: true

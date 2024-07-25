@@ -1,3 +1,4 @@
 target/
 *~
 geolocation_cache.db
+ansible/group_vars

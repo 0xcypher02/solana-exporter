@@ -1,0 +1,62 @@
+---
+- name: RUST | Check if cargo is already present
+  shell: command -v cargo
+  register: cargo_exists
+  ignore_errors: true
+
+- name: RUST | Download rustup.sh
+  when: cargo_exists is failed
+  get_url:
+    url: https://sh.rustup.rs
+    dest: /tmp/sh.rustup.rs
+    mode: "0755"
+    force: true
+
+- name: RUST | Run rustup.sh
+  when: cargo_exists is failed
+  shell: /tmp/sh.rustup.rs -y
+
+- name: RUST | Symlink `/usr/local/bin/rustup` -> `~/.cargo/bin/rustup`
+  ansible.builtin.file:
+    src: "~/.cargo/bin/rustup"
+    dest: /usr/local/bin/rustup
+    owner: root
+    group: root
+    state: link
+  become: true
+
+- name: RUST | Get active toolchain version
+  ansible.builtin.shell:
+    cmd: ~/.cargo/bin/rustup default | grep -Po '^.*?(?=-{{ ansible_architecture }})'
+  register: rustup_default_output
+  changed_when: false
+  ignore_errors: true
+
+- name: RUST | Determine currently installed toolchain, if any
+  when: rustup_default_output is defined and rustup_default_output.failed is false
+  ansible.builtin.set_fact:
+    active_rustup_toolchain_version: "{{ rustup_default_output.stdout_lines[0] }}"
+
+- name: RUST | Install desired rust version if different
+  when: active_rustup_toolchain_version is undefined or active_rustup_toolchain_version != rust_default_toolchain
+  ansible.builtin.command:
+    argv:
+      - ~/.cargo/bin/rustup
+      - default
+      - "{{ rust_default_toolchain }}"
+
+- name: RUST | Symlink `/usr/local/bin/cargo` to `~/.cargo/bin/cargo`
+  ansible.builtin.file:
+    src: ~/.cargo/bin/cargo
+    dest: /usr/local/bin/cargo
+    owner: root
+    group: root
+    mode: "0755"
+    state: link
+  become: true
+
+- name: RUST | Copy `config.toml` to `~/.cargo/config.toml`
+  ansible.builtin.copy:
+    src: "config.toml"
+    dest: ~/.cargo/config.toml
+    mode: "0755"

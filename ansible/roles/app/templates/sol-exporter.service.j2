@@ -1,0 +1,15 @@
+[Unit]
+Description=Solana Exporter Service
+After=network.target
+StartLimitIntervalSec=30m
+StartLimitBurst=5
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User={{ansible_user}}
+ExecStart=/home/{{ansible_user}}/solana-exporter/run.sh
+
+[Install]
+WantedBy=multi-user.target

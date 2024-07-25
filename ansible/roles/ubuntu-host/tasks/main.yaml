@@ -1,0 +1,25 @@
+---
+- name: UBUNTU_HOST | Update and upgrade apt packages
+  apt:
+    upgrade: true
+    update_cache: true
+    cache_valid_time: 86400 # One day
+  become: true
+  tags: packages
+
+- name: UBUNTU_HOST | Install global packages
+  apt:
+    name: "{{ item }}"
+    state: present
+  with_items: "{{ ubuntu_packages }}"
+  become: true
+  tags: packages
+
+- name: UBUNTU_HOST | Install host specific packages
+  when: host_packages is defined
+  apt:
+    name: "{{ item }}"
+    state: present
+  with_items: "{{ host_packages }}"
+  become: true
+  tags: packages

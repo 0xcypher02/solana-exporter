@@ -1,0 +1,33 @@
+---
+- hosts:
+    - ubuntu
+  roles:
+    - role: ubuntu-host
+      tags: ubuntu-host
+      ubuntu_packages:
+        - build-essential
+        - unzip
+        - pkg-config
+        - libpq-dev
+        - libssl-dev
+        - neovim
+        - python-is-python3
+        - ripgrep
+    - { role: ssh, tags: ssh }
+    # - { role: ufw, tags: ufw }
+    - { role: git, tags: git }
+
+- hosts:
+    - main
+  roles:
+    # - role: protoc
+    #   tags: protoc
+    #   protoc_version: 22.3
+    - role: rust
+      tags: rust
+      rust_default_toolchain: 1.76
+    - role: app
+      tags: app
+      solana_exporter_repo: git@github.com:0xcypher02/solana-exporter.git
+      # solana_commit: 80373d273d5bf7c41e0b4a343f65c08710c9e793
+      # solana_snapshot_finder_commit: fe2cd6d3f9ed829b694e1d0d15b53d88ccad46f5

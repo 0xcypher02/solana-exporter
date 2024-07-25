@@ -1,0 +1,8 @@
+---
+- name: GIT | Add GitHub to known hosts
+  ansible.builtin.lineinfile:
+    dest: "{{ ansible_env.HOME }}/.ssh/known_hosts"
+    create: true
+    state: present
+    line: "{{ lookup('pipe', 'ssh-keyscan -t rsa github.com') }}"
+    regexp: ^github\.com
