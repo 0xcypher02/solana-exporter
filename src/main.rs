@@ -26,7 +26,7 @@ use crate::slots::SkippedSlotsMonitor;
 use anyhow::Context;
 use clap::{load_yaml, App};
 use log::{debug, warn};
-use solana_client::rpc_client::RpcClient;
+use solana_client::nonblocking::rpc_client::RpcClient;
 use std::fs::{create_dir_all, File};
 use std::io::Write;
 use std::net::SocketAddr;
@@ -133,7 +133,7 @@ and then put real values there.",
 
     let exporter = prometheus_exporter::start(config.target)?;
     let duration = Duration::from_secs(1);
-    let client = RpcClient::new(config.rpc.clone());
+    let client: &'static RpcClient = Box::leak(Box::new(RpcClient::new(config.rpc.clone())));
 
     let geolocation_cache =
         GeolocationCache::new(persistent_database.tree(GEO_DB_CACHE_TREE_NAME)?);
@@ -170,18 +170,18 @@ and then put real values there.",
         debug!("Updating metrics");
 
         // Get metrics we need
-        let epoch_info = client.get_epoch_info()?;
-        let nodes = client.get_cluster_nodes()?;
-        let vote_accounts = client.get_vote_accounts()?;
+        let epoch_info = client.get_epoch_info().await?;
+        let nodes = client.get_cluster_nodes().await?;
+        let vote_accounts = client.get_vote_accounts().await?;
         let node_whitelist = rpc_extra::node_pubkeys(&vote_accounts_whitelist, &vote_accounts);
 
         gauges
             .export_vote_accounts(&vote_accounts)
             .context("Failed to export vote account metrics")?;
         gauges
-            .export_epoch_info(&epoch_info, &client)
+            .export_epoch_info(&epoch_info, &client).await
             .context("Failed to export epoch info metrics")?;
-        gauges.export_nodes_info(&nodes, &client, &node_whitelist)?;
+        gauges.export_nodes_info(&nodes, &client, &node_whitelist).await?;
         if let Some(maxmind) = config.maxmind.clone() {
             // If the MaxMind API is configured, submit queries for any uncached IPs.
             gauges
@@ -197,13 +197,13 @@ and then put real values there.",
         }
 
         if enable_skipped_slots {
-            skipped_slots_monitor.as_mut().unwrap().export_skipped_slots(&epoch_info, &node_whitelist)
+            skipped_slots_monitor.as_mut().unwrap().export_skipped_slots(&epoch_info, &node_whitelist).await
               .context("Failed to export skipped slots")?;
         }
 
         if let Some(x) = &rewards_monitor {
-            x.export_rewards(&epoch_info)
-                .context("Failed to export rewards")?;
+            x.export_rewards(&epoch_info).await
+                .expect("Failed to export rewards");
         } 
     }
 }

@@ -23,7 +23,7 @@ impl PersistentDatabase {
     pub fn new(dir: &Path) -> anyhow::Result<Self> {
         let database = sled::Config::default()
             .path(dir)
-            .use_compression(true)
+            // .use_compression(true)
             .open()?;
         let metadata = Metadata::new(database.open_tree("metadata")?)
             .context("could not read metadata from database")?;

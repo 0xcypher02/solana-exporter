@@ -3,8 +3,9 @@
 use crate::config::Whitelist;
 use log::{debug, log_enabled, Level};
 use prometheus_exporter::prometheus::{GaugeVec, IntCounterVec};
-use solana_client::{client_error::ClientError, rpc_client::RpcClient};
+use solana_client::{client_error::ClientError, nonblocking::rpc_client::RpcClient};
 use solana_sdk::epoch_info::EpochInfo;
+use tokio::task::JoinSet;
 use std::collections::BTreeMap;
 use std::fmt::{self, Display, Formatter};
 
@@ -14,7 +15,7 @@ const SLOT_GET_BLOCK_STEP: usize = 1_000;
 /// The monitor of skipped and validated slots per validator with minimal internal state.
 pub struct SkippedSlotsMonitor<'a> {
     /// Shared Solana RPC client.
-    client: &'a RpcClient,
+    client: &'static RpcClient,
     /// Prometheus counter.
     leader_slots: &'a IntCounterVec,
     /// Prometheus gauge.
@@ -48,7 +49,7 @@ impl Display for SlotStatus {
 impl<'a> SkippedSlotsMonitor<'a> {
     /// Constructs a monitor given `client`.
     pub fn new(
-        client: &'a RpcClient,
+        client: &'static RpcClient,
         leader_slots: &'a IntCounterVec,
         skipped_slot_percent: &'a GaugeVec,
     ) -> Self {
@@ -64,7 +65,7 @@ impl<'a> SkippedSlotsMonitor<'a> {
     }
 
     /// Exports the skipped slot statistics given `epoch_info`.
-    pub fn export_skipped_slots(
+    pub async fn export_skipped_slots(
         &mut self,
         epoch_info: &EpochInfo,
         node_whitelist: &Whitelist,
@@ -72,7 +73,7 @@ impl<'a> SkippedSlotsMonitor<'a> {
         if self.epoch_number != epoch_info.epoch {
             // Update the monitor state.
             self.slot_leaders = self
-                .get_slot_leaders(None)?
+                .get_slot_leaders(None).await?
                 .into_iter()
                 .filter(|(_, leader)| node_whitelist.contains(leader))
                 .collect();
@@ -97,6 +98,7 @@ impl<'a> SkippedSlotsMonitor<'a> {
         let abs_range_end = first_slot + range_end;
 
         let mut confirmed_blocks = vec![];
+        let mut join_set = JoinSet::new();
         for abs_range_step in (abs_range_start..abs_range_end).step_by(SLOT_GET_BLOCK_STEP) {
             let abs_range_step_end =
                 abs_range_end.min(abs_range_step + SLOT_GET_BLOCK_STEP as u64 - 1);
@@ -104,10 +106,15 @@ impl<'a> SkippedSlotsMonitor<'a> {
                 "Getting confirmed blocks from {} to {}",
                 abs_range_step, abs_range_step_end
             );
-            confirmed_blocks.extend(
-                self.client
-                    .get_blocks(abs_range_step, Some(abs_range_step_end))?,
-            );
+
+            let client = self.client;
+            join_set.spawn(async move {
+                client.get_blocks(abs_range_step, Some(abs_range_step_end)).await
+            });
+        }
+
+        while let Some(result) = join_set.join_next().await {
+            confirmed_blocks.extend(result??);
         }
         confirmed_blocks.sort_unstable();
         debug!(
@@ -171,9 +178,9 @@ impl<'a> SkippedSlotsMonitor<'a> {
 
     /// Gets the leader schedule internally and inverts it, returning the slot leaders in `epoch` or
     /// in the current epoch if `epoch` is `None`.
-    fn get_slot_leaders(&self, epoch: Option<u64>) -> Result<BTreeMap<usize, String>, ClientError> {
+    async fn get_slot_leaders(&self, epoch: Option<u64>) -> Result<BTreeMap<usize, String>, ClientError> {
         let mut slot_leaders = BTreeMap::new();
-        match self.client.get_leader_schedule(epoch)? {
+        match self.client.get_leader_schedule(epoch).await? {
             None => (),
             Some(leader_schedule) => {
                 for (pk, slots) in leader_schedule {
